@@ -1,0 +1,149 @@
+services:
+  # MinIO como reemplazo de S3
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin123}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - hadoop-network
+
+  # Cliente MinIO para inicializar buckets
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set myminio http://minio:9000 ${MINIO_ACCESS_KEY:-minioadmin} ${MINIO_SECRET_KEY:-minioadmin123};
+      mc mb --ignore-existing myminio/logs;
+      mc mb --ignore-existing myminio/output;
+      mc policy set download myminio/logs;
+      mc policy set download myminio/output;
+      exit 0;
+      "
+    networks:
+      - hadoop-network
+
+  # Aplicación Web Cliente
+  web-client:
+    build: ./web-client
+    ports:
+      - "3000:3000"
+    environment:
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin123}
+    depends_on:
+      - minio-init
+    networks:
+      - hadoop-network
+
+  # NameNode de Hadoop
+  namenode:
+    build: ./hadoop
+    ports:
+      - "9870:9870"
+      - "8088:8088"
+    environment:
+      - HADOOP_NODE_TYPE=namenode
+      - CLUSTER_NAME=hadoop-cluster
+    volumes:
+      - namenode_data:/hadoop/dfs/name
+      - hadoop_logs:/opt/hadoop/logs
+      # - shared_jars:/shared/jars
+      - ./mapreduce-job:/shared/jars
+    networks:
+      - hadoop-network
+
+  # ResourceManager de YARN
+  resourcemanager:
+    build: ./hadoop
+    ports:
+      - "8089:8088"
+      - "8030:8030"
+      - "8031:8031"
+      - "8032:8032"
+    environment:
+      - HADOOP_NODE_TYPE=resourcemanager
+    volumes:
+      - hadoop_logs:/opt/hadoop/logs
+      # - shared_jars:/shared/jars
+      - ./mapreduce-job:/shared/jars
+    depends_on:
+      - namenode
+    networks:
+      - hadoop-network
+
+  # DataNode y NodeManager (escalable)
+  datanode:
+    build: ./hadoop
+    environment:
+      - HADOOP_NODE_TYPE=datanode
+      - SERVICE_PRECONDITION=namenode:9870
+    volumes:
+      - hadoop_logs:/opt/hadoop/logs
+      # - shared_jars:/shared/jars
+      - ./mapreduce-job:/shared/jars
+    depends_on:
+      - namenode
+      - resourcemanager
+    deploy:
+      replicas: 2
+    networks:
+      - hadoop-network
+
+  # Compilador del Job de MapReduce
+  mapreduce-compiler:
+    build: ./mapreduce-job
+    volumes:
+      - ./mapreduce-job:/app
+      # - shared_jars:/app
+      # - ./mapreduce-job/src:/app/src
+      # - ./mapreduce-job/pom.xml:/app/pom.xml
+    command: mvn package
+    networks:
+      - hadoop-network
+
+  # Ejecutor del Job (se ejecuta manualmente)
+  job-runner:
+    build: ./hadoop
+    environment:
+      - HADOOP_NODE_TYPE=client
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin123}
+    volumes:
+      # - shared_jars:/shared/jars
+      - ./mapreduce-job:/shared/jars
+      - ./scripts:/scripts
+    depends_on:
+      - namenode
+      - resourcemanager
+      - datanode
+      - mapreduce-compiler
+    entrypoint: ["tail", "-f", "/dev/null"]
+    networks:
+      - hadoop-network
+
+networks:
+  hadoop-network:
+    driver: bridge
+
+volumes:
+  minio_data:
+  namenode_data:
+  hadoop_logs:
+  # shared_jars:
