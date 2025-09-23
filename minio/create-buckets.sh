@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Define alias 'minio' con URL sin credenciales + user/pass como args
-mc alias set minio http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
+mc alias set minio "${MINIO_ENDPOINT:-http://minio:9000}" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
 
 # Crea buckets si no existen
 mc mb --ignore-existing minio/"$S3_BUCKET_LOGS"

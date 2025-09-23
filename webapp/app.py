@@ -8,11 +8,14 @@ from botocore.client import Config
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 
-S3_BUCKET = os.environ.get("S3_BUCKET_LOGS", "logs")
-ENDPOINT = os.environ.get("MINIO_ENDPOINT", "http://minio:9000")
-AWS_ACCESS_KEY_ID = os.environ["AWS_ACCESS_KEY_ID"]
-AWS_SECRET_ACCESS_KEY = os.environ["AWS_SECRET_ACCESS_KEY"]
-AWS_REGION = os.environ.get("AWS_REGION","us-east-1")
+def env(name, default=""):
+    return os.environ.get(name, default)
+
+S3_BUCKET = env("S3_BUCKET_LOGS", "logs")
+ENDPOINT = env("MINIO_ENDPOINT", "http://minio:9000")
+AWS_ACCESS_KEY_ID = env("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = env("AWS_SECRET_ACCESS_KEY")
+AWS_REGION = env("AWS_REGION", "us-east-1")
 
 s3 = boto3.client(
     "s3",
