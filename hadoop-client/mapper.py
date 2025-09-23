@@ -7,7 +7,6 @@ for line in sys.stdin:
     try:
         rec = json.loads(line)
         t = rec.get("type","unknown")
-        print(f"{t}\t1")
+        sys.stdout.write("{}\t1\n".format(t))
     except Exception:
-        # ignora líneas corruptas
         continue

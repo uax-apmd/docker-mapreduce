@@ -1,3 +1,14 @@
+x-hadoop: &hadoop_env
+  YARN_CONF_yarn_app_mapreduce_am_env: "HADOOP_HOME=/opt/hadoop-3.2.1,HADOOP_MAPRED_HOME=/opt/hadoop-3.2.1"
+  MAPRED_CONF_mapreduce_map_env: "HADOOP_HOME=/opt/hadoop-3.2.1,HADOOP_MAPRED_HOME=/opt/hadoop-3.2.1"
+  MAPRED_CONF_mapreduce_reduce_env: "HADOOP_HOME=/opt/hadoop-3.2.1,HADOOP_MAPRED_HOME=/opt/hadoop-3.2.1"
+  MAPRED_CONF_mapreduce_application__classpath: "/opt/hadoop-3.2.1/etc/hadoop:/opt/hadoop-3.2.1/share/hadoop/common/*:/opt/hadoop-3.2.1/share/hadoop/common/lib/*:/opt/hadoop-3.2.1/share/hadoop/hdfs/*:/opt/hadoop-3.2.1/share/hadoop/hdfs/lib/*:/opt/hadoop-3.2.1/share/hadoop/mapreduce/*:/opt/hadoop-3.2.1/share/hadoop/mapreduce/lib/*:/opt/hadoop-3.2.1/share/hadoop/yarn/*:/opt/hadoop-3.2.1/share/hadoop/yarn/lib/*"
+  YARN_CONF_yarn_application__classpath: "/opt/hadoop-3.2.1/etc/hadoop:/opt/hadoop-3.2.1/share/hadoop/common/*:/opt/hadoop-3.2.1/share/hadoop/common/lib/*:/opt/hadoop-3.2.1/share/hadoop/hdfs/*:/opt/hadoop-3.2.1/share/hadoop/hdfs/lib/*:/opt/hadoop-3.2.1/share/hadoop/mapreduce/*:/opt/hadoop-3.2.1/share/hadoop/mapreduce/lib/*:/opt/hadoop-3.2.1/share/hadoop/yarn/*:/opt/hadoop-3.2.1/share/hadoop/yarn/lib/*"
+  YARN_CONF_mapreduce_application__classpath: "/opt/hadoop-3.2.1/etc/hadoop:/opt/hadoop-3.2.1/share/hadoop/common/*:/opt/hadoop-3.2.1/share/hadoop/common/lib/*:/opt/hadoop-3.2.1/share/hadoop/hdfs/*:/opt/hadoop-3.2.1/share/hadoop/hdfs/lib/*:/opt/hadoop-3.2.1/share/hadoop/mapreduce/*:/opt/hadoop-3.2.1/share/hadoop/mapreduce/lib/*:/opt/hadoop-3.2.1/share/hadoop/yarn/*:/opt/hadoop-3.2.1/share/hadoop/yarn/lib/*"
+  YARN_CONF_yarn_nodemanager_aux___services: "mapreduce_shuffle"
+  YARN_CONF_yarn_nodemanager_aux___services_mapreduce__shuffle__class: "org.apache.hadoop.mapred.ShuffleHandler"
+
+
 services:
   # ---------- S3 Compatible ----------
   minio:
@@ -82,15 +93,14 @@ services:
       YARN_CONF_yarn_resourcemanager_scheduler__address: resourcemanager:8030
       YARN_CONF_yarn_resourcemanager_resource__tracker__address: resourcemanager:8031
       YARN_CONF_yarn_resourcemanager_webapp__address: resourcemanager:8088
-      YARN_CONF_yarn_app_mapreduce_am_env: "HADOOP_HOME=/opt/hadoop,HADOOP_MAPRED_HOME=/opt/hadoop"
-      MAPRED_CONF_mapreduce_application__classpath: "/opt/hadoop/etc/hadoop:/opt/hadoop/share/hadoop/common/*:/opt/hadoop/share/hadoop/common/lib/*:/opt/hadoop/share/hadoop/hdfs/*:/opt/hadoop/share/hadoop/hdfs/lib/*:/opt/hadoop/share/hadoop/mapreduce/*:/opt/hadoop/share/hadoop/mapreduce/lib/*:/opt/hadoop/share/hadoop/yarn/*:/opt/hadoop/share/hadoop/yarn/lib/*"
-      YARN_CONF_yarn_application__classpath: "/opt/hadoop/etc/hadoop:/opt/hadoop/share/hadoop/common/*:/opt/hadoop/share/hadoop/common/lib/*:/opt/hadoop/share/hadoop/hdfs/*:/opt/hadoop/share/hadoop/hdfs/lib/*:/opt/hadoop/share/hadoop/mapreduce/*:/opt/hadoop/share/hadoop/mapreduce/lib/*:/opt/hadoop/share/hadoop/yarn/*:/opt/hadoop/share/hadoop/yarn/lib/*"
-      YARN_CONF_mapreduce_application__classpath: "/opt/hadoop/etc/hadoop:/opt/hadoop/share/hadoop/common/*:/opt/hadoop/share/hadoop/common/lib/*:/opt/hadoop/share/hadoop/hdfs/*:/opt/hadoop/share/hadoop/hdfs/lib/*:/opt/hadoop/share/hadoop/mapreduce/*:/opt/hadoop/share/hadoop/mapreduce/lib/*:/opt/hadoop/share/hadoop/yarn/*:/opt/hadoop/share/hadoop/yarn/lib/*"
+      <<: *hadoop_env
     ports:
       - "8088:8088"  # YARN UI
 
   nodemanager:
-    image: bde2020/hadoop-nodemanager:2.0.0-hadoop3.2.1-java8
+    build:
+      context: ./nodemanager
+    image: paella/hadoop-nodemanager:2.0.0-hadoop3.2.1-java8-python
     environment:
       CORE_CONF_fs_defaultFS: ${HDFS_NAMENODE_URI}
       SERVICE_PRECONDITION: "namenode:9870 resourcemanager:8088"
@@ -98,21 +108,17 @@ services:
       YARN_CONF_yarn_resourcemanager_address: resourcemanager:8032
       YARN_CONF_yarn_resourcemanager_scheduler__address: resourcemanager:8030
       YARN_CONF_yarn_resourcemanager_resource__tracker__address: resourcemanager:8031
-      YARN_CONF_yarn_app_mapreduce_am_env: "HADOOP_HOME=/opt/hadoop,HADOOP_MAPRED_HOME=/opt/hadoop"
-      MAPRED_CONF_mapreduce_application__classpath: "/opt/hadoop/etc/hadoop:/opt/hadoop/share/hadoop/common/*:/opt/hadoop/share/hadoop/common/lib/*:/opt/hadoop/share/hadoop/hdfs/*:/opt/hadoop/share/hadoop/hdfs/lib/*:/opt/hadoop/share/hadoop/mapreduce/*:/opt/hadoop/share/hadoop/mapreduce/lib/*:/opt/hadoop/share/hadoop/yarn/*:/opt/hadoop/share/hadoop/yarn/lib/*"
+      <<: *hadoop_env
       YARN_CONF_yarn_nodemanager_env__whitelist: "JAVA_HOME,HADOOP_HOME,HADOOP_MAPRED_HOME,HADOOP_COMMON_HOME,HADOOP_HDFS_HOME,HADOOP_YARN_HOME,CLASSPATH,LD_LIBRARY_PATH,LANG,LANGUAGE,LC_ALL,PATH"
       YARN_CONF_yarn_nodemanager_resource_memory__mb: "2048"
       YARN_CONF_yarn_nodemanager_resource_cpu__vcores: "2"
-      YARN_CONF_yarn_application__classpath: "/opt/hadoop/etc/hadoop:/opt/hadoop/share/hadoop/common/*:/opt/hadoop/share/hadoop/common/lib/*:/opt/hadoop/share/hadoop/hdfs/*:/opt/hadoop/share/hadoop/hdfs/lib/*:/opt/hadoop/share/hadoop/mapreduce/*:/opt/hadoop/share/hadoop/mapreduce/lib/*:/opt/hadoop/share/hadoop/yarn/*:/opt/hadoop/share/hadoop/yarn/lib/*"
-      YARN_CONF_mapreduce_application__classpath: "/opt/hadoop/etc/hadoop:/opt/hadoop/share/hadoop/common/*:/opt/hadoop/share/hadoop/common/lib/*:/opt/hadoop/share/hadoop/hdfs/*:/opt/hadoop/share/hadoop/hdfs/lib/*:/opt/hadoop/share/hadoop/mapreduce/*:/opt/hadoop/share/hadoop/mapreduce/lib/*:/opt/hadoop/share/hadoop/yarn/*:/opt/hadoop/share/hadoop/yarn/lib/*"
 
   historyserver:
     image: bde2020/hadoop-historyserver:2.0.0-hadoop3.2.1-java8
     environment:
       CORE_CONF_fs_defaultFS: ${HDFS_NAMENODE_URI}
       SERVICE_PRECONDITION: "namenode:9870 resourcemanager:8088"
-      YARN_CONF_yarn_application__classpath: "/opt/hadoop/etc/hadoop:/opt/hadoop/share/hadoop/common/*:/opt/hadoop/share/hadoop/common/lib/*:/opt/hadoop/share/hadoop/hdfs/*:/opt/hadoop/share/hadoop/hdfs/lib/*:/opt/hadoop/share/hadoop/mapreduce/*:/opt/hadoop/share/hadoop/mapreduce/lib/*:/opt/hadoop/share/hadoop/yarn/*:/opt/hadoop/share/hadoop/yarn/lib/*"
-      YARN_CONF_mapreduce_application__classpath: "/opt/hadoop/etc/hadoop:/opt/hadoop/share/hadoop/common/*:/opt/hadoop/share/hadoop/common/lib/*:/opt/hadoop/share/hadoop/hdfs/*:/opt/hadoop/share/hadoop/hdfs/lib/*:/opt/hadoop/share/hadoop/mapreduce/*:/opt/hadoop/share/hadoop/mapreduce/lib/*:/opt/hadoop/share/hadoop/yarn/*:/opt/hadoop/share/hadoop/yarn/lib/*"
+      <<: *hadoop_env
     ports:
       - "8188:8188"  # JobHistory UI
 

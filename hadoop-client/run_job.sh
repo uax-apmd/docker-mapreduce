@@ -117,18 +117,18 @@ printf '%s\0' "${INPUT_FILES[@]}" \
 STREAMING_JAR=$(ls "$HADOOP_HOME"/share/hadoop/tools/lib/hadoop-streaming-*.jar | head -n1)
 OUT="/output/mapreduce_$(date +%s)"
 
-APP_CLASSPATH="/opt/hadoop/etc/hadoop:\
-/opt/hadoop/share/hadoop/common/*:/opt/hadoop/share/hadoop/common/lib/*:\
-/opt/hadoop/share/hadoop/hdfs/*:/opt/hadoop/share/hadoop/hdfs/lib/*:\
-/opt/hadoop/share/hadoop/mapreduce/*:/opt/hadoop/share/hadoop/mapreduce/lib/*:\
-/opt/hadoop/share/hadoop/yarn/*:/opt/hadoop/share/hadoop/yarn/lib/*"
+APP_CLASSPATH="/opt/hadoop-3.2.1/etc/hadoop:\
+/opt/hadoop-3.2.1/share/hadoop/common/*:/opt/hadoop-3.2.1/share/hadoop/common/lib/*:\
+/opt/hadoop-3.2.1/share/hadoop/hdfs/*:/opt/hadoop-3.2.1/share/hadoop/hdfs/lib/*:\
+/opt/hadoop-3.2.1/share/hadoop/mapreduce/*:/opt/hadoop-3.2.1/share/hadoop/mapreduce/lib/*:\
+/opt/hadoop-3.2.1/share/hadoop/yarn/*:/opt/hadoop-3.2.1/share/hadoop/yarn/lib/*"
 
 yarn jar "$STREAMING_JAR" \
   -D mapreduce.framework.name=yarn \
   -D mapreduce.application.classpath="$APP_CLASSPATH" \
-  -D yarn.app.mapreduce.am.env=HADOOP_HOME=/opt/hadoop,HADOOP_MAPRED_HOME=/opt/hadoop \
-  -D mapreduce.map.env=HADOOP_HOME=/opt/hadoop,HADOOP_MAPRED_HOME=/opt/hadoop \
-  -D mapreduce.reduce.env=HADOOP_HOME=/opt/hadoop,HADOOP_MAPRED_HOME=/opt/hadoop \
+  -D yarn.app.mapreduce.am.env=HADOOP_HOME=/opt/hadoop-3.2.1,HADOOP_MAPRED_HOME=/opt/hadoop-3.2.1 \
+  -D mapreduce.map.env=HADOOP_HOME=/opt/hadoop-3.2.1,HADOOP_MAPRED_HOME=/opt/hadoop-3.2.1 \
+  -D mapreduce.reduce.env=HADOOP_HOME=/opt/hadoop-3.2.1,HADOOP_MAPRED_HOME=/opt/hadoop-3.2.1 \
   -D yarn.app.mapreduce.am.resource.mb=256 \
   -D yarn.app.mapreduce.am.command-opts=-Xmx192m \
   -D mapreduce.map.memory.mb=256 \

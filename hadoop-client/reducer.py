@@ -11,8 +11,8 @@ for line in sys.stdin:
     elif key == cur_key:
         acc += val
     else:
-        print(f"{cur_key}\t{acc}")
+        sys.stdout.write("{}\t{}\n".format(cur_key, acc))
         cur_key = key
         acc = val
 if cur_key is not None:
-    print(f"{cur_key}\t{acc}")
+    sys.stdout.write("{}\t{}\n".format(cur_key, acc))
