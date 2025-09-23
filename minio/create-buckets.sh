@@ -1,9 +1,11 @@
 #!/bin/sh
 set -euo pipefail
-mc alias set minio "$MC_HOST_minio"
+
+# Define alias 'minio' con URL sin credenciales + user/pass como args
+mc alias set minio http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
 
 # Crea buckets si no existen
-mc ls minio/"$S3_BUCKET_LOGS" >/dev/null 2>&1 || mc mb minio/"$S3_BUCKET_LOGS"
-mc ls minio/"$S3_BUCKET_RESULTS" >/dev/null 2>&1 || mc mb minio/"$S3_BUCKET_RESULTS"
+mc mb --ignore-existing minio/"$S3_BUCKET_LOGS"
+mc mb --ignore-existing minio/"$S3_BUCKET_RESULTS"
 
 echo "Buckets OK: $S3_BUCKET_LOGS, $S3_BUCKET_RESULTS"

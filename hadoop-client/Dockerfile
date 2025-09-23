@@ -8,13 +8,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 
 # Hadoop CLI 3.2.1 (sin daemons)
-ENV HADOOP_VERSION=3.2.1
-RUN curl -fsSL https://archive.apache.org/dist/hadoop/common/hadoop-${HADOOP_VERSION}/hadoop-${HADOOP_VERSION}.tar.gz \
-    -o /tmp/hadoop.tgz \
- && mkdir -p /opt \
- && tar -xzf /tmp/hadoop.tgz -C /opt \
- && mv /opt/hadoop-${HADOOP_VERSION} /opt/hadoop \
- && rm -f /tmp/hadoop.tgz
+ARG HADOOP_VERSION=3.2.1
+# Si el tar.gz está en el contexto, lo usamos y evitamos red DESCARGA
+COPY hadoop-${HADOOP_VERSION}.tar.gz /tmp/hadoop.tgz
+
+# Fallbacks + reintentos si no está el archivo local
+RUN set -eux; \
+  if [ ! -s /tmp/hadoop.tgz ]; then \
+    for u in \
+      https://dlcdn.apache.org/hadoop/common/hadoop-${HADOOP_VERSION}/hadoop-${HADOOP_VERSION}.tar.gz \
+      https://archive.apache.org/dist/hadoop/common/hadoop-${HADOOP_VERSION}/hadoop-${HADOOP_VERSION}.tar.gz \
+    ; do \
+      echo "Trying $u"; \
+      curl -fL --retry 5 --retry-connrefused \
+           --speed-time 30 --speed-limit 100000 \
+           -o /tmp/hadoop.tgz "$u" && break || true; \
+    done; \
+    test -s /tmp/hadoop.tgz; \
+  fi; \
+  mkdir -p /opt && tar -xzf /tmp/hadoop.tgz -C /opt && \
+  mv /opt/hadoop-${HADOOP_VERSION} /opt/hadoop && rm -f /tmp/hadoop.tgz
 
 ENV HADOOP_HOME=/opt/hadoop
 ENV PATH="$HADOOP_HOME/bin:$HADOOP_HOME/sbin:$PATH"

@@ -39,6 +39,22 @@ cat > "$CONF_DIR/yarn-site.xml" <<EOF
     <value>${YARN_RM_HOST}</value>
   </property>
   <property>
+    <name>yarn.resourcemanager.address</name>
+    <value>${YARN_RM_HOST}:8032</value>
+  </property>
+  <property>
+    <name>yarn.resourcemanager.scheduler.address</name>
+    <value>${YARN_RM_HOST}:8030</value>
+  </property>
+  <property>
+    <name>yarn.resourcemanager.resource-tracker.address</name>
+    <value>${YARN_RM_HOST}:8031</value>
+  </property>
+  <property>
+    <name>yarn.resourcemanager.webapp.address</name>
+    <value>${YARN_RM_HOST}:8088</value>
+  </property>
+  <property>
     <name>yarn.nodemanager.aux-services</name>
     <value>mapreduce_shuffle</value>
   </property>
@@ -68,29 +84,57 @@ mc alias set minio "$ENDPOINT" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"
 # ---- Descarga logs S3 -> local ----
 TMP_IN="/tmp/logs"
 rm -rf "$TMP_IN" && mkdir -p "$TMP_IN"
+
 echo "Mirroring s3://${LOGS_BUCKET} -> $TMP_IN ..."
 mc mirror --overwrite "minio/${LOGS_BUCKET}" "$TMP_IN" || true
 
-# ---- Sube a HDFS como JSONL (concat sencilla) ----
-HDFS_IN="/input/logs_$(date +%s)"
-hdfs dfs -mkdir -p "$HDFS_IN"
-if find "$TMP_IN" -type f -name "*.json" | read; then
-  find "$TMP_IN" -type f -name "*.json" -print0 \
-    | xargs -0 -I{} sh -c 'cat "{}" >> "'$TMP_IN'/all.jsonl"'
-  hdfs dfs -put -f "$TMP_IN/all.jsonl" "$HDFS_IN/"
-else
-  echo "No hay archivos .json en ${LOGS_BUCKET}. ¿Has generado eventos?"
+# Si mc crea una carpeta con el nombre del bucket, úsala como raíz
+SRC_DIR="$TMP_IN"
+[ -d "$TMP_IN/$LOGS_BUCKET" ] && SRC_DIR="$TMP_IN/$LOGS_BUCKET"
+
+echo "Listando ejemplo de archivos descargados:"
+find "$SRC_DIR" -maxdepth 3 -type f -printf "%P\n" | head -n 10 || true
+
+# Busca .json y .jsonl (profundidad arbitraria)
+mapfile -t INPUT_FILES < <(find "$SRC_DIR" -type f \( -name "*.json" -o -name "*.jsonl" \))
+
+if [ "${#INPUT_FILES[@]}" -eq 0 ]; then
+  echo "No hay archivos .json/.jsonl en ${LOGS_BUCKET}. ¿Has generado eventos?"
   exit 0
 fi
+
+echo "Encontrados ${#INPUT_FILES[@]} ficheros de entrada."
+
+# ---- Sube a HDFS manteniendo múltiples ficheros (mejores splits) ----
+HDFS_IN="/input/logs_$(date +%s)"
+hdfs dfs -mkdir -p "$HDFS_IN"
+
+# Sube en lotes para evitar problemas con ARG_MAX
+printf '%s\0' "${INPUT_FILES[@]}" \
+| xargs -0 -r -n 50 sh -c 'dest="$1"; shift; hdfs dfs -put -f "$@" "$dest"' _ "$HDFS_IN/"
 
 # ---- Localiza el jar de streaming ----
 STREAMING_JAR=$(ls "$HADOOP_HOME"/share/hadoop/tools/lib/hadoop-streaming-*.jar | head -n1)
 OUT="/output/mapreduce_$(date +%s)"
 
-echo "Lanzando Hadoop Streaming en YARN..."
+APP_CLASSPATH="/opt/hadoop/etc/hadoop:\
+/opt/hadoop/share/hadoop/common/*:/opt/hadoop/share/hadoop/common/lib/*:\
+/opt/hadoop/share/hadoop/hdfs/*:/opt/hadoop/share/hadoop/hdfs/lib/*:\
+/opt/hadoop/share/hadoop/mapreduce/*:/opt/hadoop/share/hadoop/mapreduce/lib/*:\
+/opt/hadoop/share/hadoop/yarn/*:/opt/hadoop/share/hadoop/yarn/lib/*"
+
 yarn jar "$STREAMING_JAR" \
-  -D mapreduce.job.name="poc-mapreduce-count-by-type" \
-  -D mapreduce.job.reduces=2 \
+  -D mapreduce.framework.name=yarn \
+  -D mapreduce.application.classpath="$APP_CLASSPATH" \
+  -D yarn.app.mapreduce.am.env=HADOOP_HOME=/opt/hadoop,HADOOP_MAPRED_HOME=/opt/hadoop \
+  -D mapreduce.map.env=HADOOP_HOME=/opt/hadoop,HADOOP_MAPRED_HOME=/opt/hadoop \
+  -D mapreduce.reduce.env=HADOOP_HOME=/opt/hadoop,HADOOP_MAPRED_HOME=/opt/hadoop \
+  -D yarn.app.mapreduce.am.resource.mb=256 \
+  -D yarn.app.mapreduce.am.command-opts=-Xmx192m \
+  -D mapreduce.map.memory.mb=256 \
+  -D mapreduce.reduce.memory.mb=256 \
+  -D mapreduce.map.java.opts=-Xmx192m \
+  -D mapreduce.reduce.java.opts=-Xmx192m \
   -files /job/mapper.py,/job/reducer.py \
   -mapper "python3 mapper.py" \
   -reducer "python3 reducer.py" \
