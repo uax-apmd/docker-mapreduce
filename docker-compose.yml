@@ -1,149 +1,132 @@
 services:
-  # MinIO como reemplazo de S3
+  # ---------- S3 Compatible ----------
   minio:
     image: minio/minio:latest
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin123}
+    container_name: minio
     command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "9000:9000"  # S3 API
+      - "9001:9001"  # Consola web
     volumes:
       - minio_data:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
-    networks:
-      - hadoop-network
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # Cliente MinIO para inicializar buckets
-  minio-init:
+  mc:
     image: minio/mc:latest
+    container_name: minio-mc
     depends_on:
       minio:
         condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set myminio http://minio:9000 ${MINIO_ACCESS_KEY:-minioadmin} ${MINIO_SECRET_KEY:-minioadmin123};
-      mc mb --ignore-existing myminio/logs;
-      mc mb --ignore-existing myminio/output;
-      mc policy set download myminio/logs;
-      mc policy set download myminio/output;
-      exit 0;
-      "
-    networks:
-      - hadoop-network
-
-  # Aplicación Web Cliente
-  web-client:
-    build: ./web-client
-    ports:
-      - "3000:3000"
+    entrypoint: ["/bin/sh", "/init/create-buckets.sh"]
+    volumes:
+      - ./minio/create-buckets.sh:/init/create-buckets.sh:ro
     environment:
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin123}
-    depends_on:
-      - minio-init
-    networks:
-      - hadoop-network
+      MC_HOST_minio: http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio:9000
+      S3_BUCKET_LOGS: ${S3_BUCKET_LOGS}
+      S3_BUCKET_RESULTS: ${S3_BUCKET_RESULTS}
 
-  # NameNode de Hadoop
+  # ---------- Web App que genera logs ----------
+  webapp:
+    build:
+      context: ./webapp
+    container_name: webapp
+    environment:
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION}
+      S3_BUCKET_LOGS: ${S3_BUCKET_LOGS}
+    ports:
+      - "8080:8080"
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  # ---------- Hadoop HDFS + YARN (BDE images) ----------
   namenode:
-    build: ./hadoop
-    ports:
-      - "9870:9870"
-      - "8088:8088"
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
     environment:
-      - HADOOP_NODE_TYPE=namenode
-      - CLUSTER_NAME=hadoop-cluster
-    volumes:
-      - namenode_data:/hadoop/dfs/name
-      - hadoop_logs:/opt/hadoop/logs
-      # - shared_jars:/shared/jars
-      - ./mapreduce-job:/shared/jars
-    networks:
-      - hadoop-network
-
-  # ResourceManager de YARN
-  resourcemanager:
-    build: ./hadoop
+      CLUSTER_NAME: ${CLUSTER_NAME}
+      CORE_CONF_fs_defaultFS: ${HDFS_NAMENODE_URI}
     ports:
-      - "8089:8088"
-      - "8030:8030"
-      - "8031:8031"
-      - "8032:8032"
-    environment:
-      - HADOOP_NODE_TYPE=resourcemanager
+      - "9870:9870"   # HDFS NameNode UI
+      - "8020:8020"   # fs.defaultFS
     volumes:
-      - hadoop_logs:/opt/hadoop/logs
-      # - shared_jars:/shared/jars
-      - ./mapreduce-job:/shared/jars
-    depends_on:
-      - namenode
-    networks:
-      - hadoop-network
+      - hadoop_namenode:/hadoop/dfs/name
+    healthcheck:
+      test: ["CMD", "bash", "-lc", "curl -f http://localhost:9870 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
 
-  # DataNode y NodeManager (escalable)
   datanode:
-    build: ./hadoop
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
     environment:
-      - HADOOP_NODE_TYPE=datanode
-      - SERVICE_PRECONDITION=namenode:9870
+      CORE_CONF_fs_defaultFS: ${HDFS_NAMENODE_URI}
+      SERVICE_PRECONDITION: "namenode:9870"
     volumes:
-      - hadoop_logs:/opt/hadoop/logs
-      # - shared_jars:/shared/jars
-      - ./mapreduce-job:/shared/jars
-    depends_on:
-      - namenode
-      - resourcemanager
-    deploy:
-      replicas: 2
-    networks:
-      - hadoop-network
+      - hadoop_datanode:/hadoop/dfs/data
 
-  # Compilador del Job de MapReduce
-  mapreduce-compiler:
-    build: ./mapreduce-job
-    volumes:
-      - ./mapreduce-job:/app
-      # - shared_jars:/app
-      # - ./mapreduce-job/src:/app/src
-      # - ./mapreduce-job/pom.xml:/app/pom.xml
-    command: mvn package
-    networks:
-      - hadoop-network
-
-  # Ejecutor del Job (se ejecuta manualmente)
-  job-runner:
-    build: ./hadoop
+  resourcemanager:
+    image: bde2020/hadoop-resourcemanager:2.0.0-hadoop3.2.1-java8
+    container_name: resourcemanager
     environment:
-      - HADOOP_NODE_TYPE=client
-      - MINIO_ENDPOINT=http://minio:9000
-      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
-      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin123}
-    volumes:
-      # - shared_jars:/shared/jars
-      - ./mapreduce-job:/shared/jars
-      - ./scripts:/scripts
-    depends_on:
-      - namenode
-      - resourcemanager
-      - datanode
-      - mapreduce-compiler
-    entrypoint: ["tail", "-f", "/dev/null"]
-    networks:
-      - hadoop-network
+      CORE_CONF_fs_defaultFS: ${HDFS_NAMENODE_URI}
+      YARN_RESOURCEMANAGER_WEBAPP_ADDRESS: resourcemanager:8088
+      SERVICE_PRECONDITION: "namenode:9870"
+    ports:
+      - "8088:8088"  # YARN UI
 
-networks:
-  hadoop-network:
-    driver: bridge
+  nodemanager:
+    image: bde2020/hadoop-nodemanager:2.0.0-hadoop3.2.1-java8
+    environment:
+      CORE_CONF_fs_defaultFS: ${HDFS_NAMENODE_URI}
+      SERVICE_PRECONDITION: "namenode:9870 resourcemanager:8088"
+
+  historyserver:
+    image: bde2020/hadoop-historyserver:2.0.0-hadoop3.2.1-java8
+    container_name: historyserver
+    environment:
+      CORE_CONF_fs_defaultFS: ${HDFS_NAMENODE_URI}
+      SERVICE_PRECONDITION: "namenode:9870 resourcemanager:8088"
+    ports:
+      - "8188:8188"  # JobHistory UI
+
+  # ---------- Cliente para enviar jobs ----------
+  hadoop-client:
+    build:
+      context: ./hadoop-client
+    container_name: hadoop-client
+    environment:
+      # HDFS/YARN
+      HDFS_NAMENODE_URI: ${HDFS_NAMENODE_URI}
+      YARN_RM_HOST: resourcemanager
+
+      # MinIO / S3
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      S3_BUCKET_LOGS: ${S3_BUCKET_LOGS}
+      S3_BUCKET_RESULTS: ${S3_BUCKET_RESULTS}
+    depends_on:
+      namenode:
+        condition: service_healthy
+      resourcemanager:
+        condition: service_started
+    volumes:
+      - ./hadoop-client:/job
+      - ./results:/results
 
 volumes:
   minio_data:
-  namenode_data:
-  hadoop_logs:
-  # shared_jars:
+  hadoop_namenode:
+  hadoop_datanode:

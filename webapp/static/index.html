@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Cliente de logs (PoC)</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 2rem; }
+    .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+    button { padding: .6rem 1rem; border-radius: 10px; border: 1px solid #d1d5db; background: #f9fafb; cursor: pointer; }
+    button:hover { background: #f3f4f6; }
+    input[type="number"] { padding: .5rem .75rem; border: 1px solid #d1d5db; border-radius: 10px; width: 8rem; }
+    code { background: #f3f4f6; padding: .15rem .35rem; border-radius: 6px; }
+    #out { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: .95rem; }
+  </style>
+</head>
+<body>
+  <h1>Cliente HTML · Generador de logs</h1>
+
+  <div class="card">
+    <h2>Eventos manuales</h2>
+    <p>Envía eventos al backend Flask, que los sube a S3 (MinIO).</p>
+    <p>
+      <button id="btn-pageview">Enviar <code>pageview</code></button>
+      <button id="btn-click">Enviar <code>click</code></button>
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Generar N logs (spam)</h2>
+    <p>Usa el endpoint <code>/spam?n=...</code> del backend.</p>
+    <p>
+      <input id="spamN" type="number" min="1" step="1" value="100" />
+      <button id="btn-spam">Generar</button>
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Salida</h2>
+    <div id="out">Listo.</div>
+  </div>
+
+  <script>
+    const out = document.getElementById('out');
+
+    function log(msg) {
+      out.textContent = (new Date()).toISOString() + " · " + msg + "\n" + out.textContent;
+    }
+
+    async function sendLog(type, path) {
+      const payload = { type, path };
+      const res = await fetch('/api/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const text = await res.text();
+      log(`POST /api/log -> ${res.status} ${text.trim()}`);
+    }
+
+    async function spamN(n) {
+      const res = await fetch(`/spam?n=${encodeURIComponent(n)}`);
+      const text = await res.text();
+      log(`GET /spam?n=${n} -> ${res.status} ${text.trim()}`);
+    }
+
+    document.getElementById('btn-pageview').addEventListener('click', () => {
+      sendLog('pageview', '/ui');
+    });
+
+    document.getElementById('btn-click').addEventListener('click', () => {
+      sendLog('click', '/cta');
+    });
+
+    document.getElementById('btn-spam').addEventListener('click', () => {
+      const n = parseInt(document.getElementById('spamN').value || '100', 10);
+      spamN(n);
+    });
+
+    // Envía un pageview al cargar la página
+    sendLog('pageview', '/ui');
+  </script>
+</body>
+</html>
