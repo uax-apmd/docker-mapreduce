@@ -81,7 +81,7 @@ services:
       SERVICE_PRECONDITION: "namenode:9870"
     # volumes:
     #   - hadoop_datanode:/hadoop/dfs/data
-    scale: 3
+    scale: 10
 
   resourcemanager:
     image: bde2020/hadoop-resourcemanager:2.0.0-hadoop3.2.1-java8
@@ -112,7 +112,7 @@ services:
       YARN_CONF_yarn_nodemanager_env__whitelist: "JAVA_HOME,HADOOP_HOME,HADOOP_MAPRED_HOME,HADOOP_COMMON_HOME,HADOOP_HDFS_HOME,HADOOP_YARN_HOME,CLASSPATH,LD_LIBRARY_PATH,LANG,LANGUAGE,LC_ALL,PATH"
       YARN_CONF_yarn_nodemanager_resource_memory__mb: "2048"
       YARN_CONF_yarn_nodemanager_resource_cpu__vcores: "2"
-    scale: 2
+    scale: 20
 
   historyserver:
     image: bde2020/hadoop-historyserver:2.0.0-hadoop3.2.1-java8
