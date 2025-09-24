@@ -1,4 +1,3 @@
-# suma por clave
 import sys
 cur_key = None
 acc = 0

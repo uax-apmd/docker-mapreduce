@@ -1,4 +1,3 @@
-# lee JSON por línea y emite "type\t1"
 import sys, json
 for line in sys.stdin:
     line=line.strip()
